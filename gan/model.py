@@ -14,36 +14,36 @@ def upsample2x2(x,ks,ch,p):
     x = conv2d_transpose(x, ks, ks, ch, strides=[1,2,2,1], parameter=p)
     return x
 
-def generator(feature, first_shape, num_upscale, reuse, training=False):
+def generator(feature, first_shape, num_upscale, reuse, training=False, var_device='/cpu:0'):
     x = feature
     ks = 5
 
     batch_normalize = True
 
     p0 = LayerParameter(
-        with_batch_normalize=batch_normalize,
+        with_batch_normalize=False,
         with_bias=False,
         rectifier=tf.tanh,
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
     p1 = LayerParameter(
         with_batch_normalize=batch_normalize,
         with_bias=False,
         rectifier=pseud_tanh(),
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
     p2 = LayerParameter(
         with_bias=False,
         with_batch_normalize=batch_normalize,
         rectifier=tf.nn.sigmoid,
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
     p3 = LayerParameter(
-        with_batch_normalize=batch_normalize,
+        with_batch_normalize=False,
         with_bias=False,
-        rectifier=tf.nn.relu,
+        rectifier=tf.nn.sigmoid,
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
 
     with tf.variable_scope('generator', reuse=reuse):
         xs = x.get_shape().as_list()
@@ -76,20 +76,20 @@ def generator(feature, first_shape, num_upscale, reuse, training=False):
 
     return x
 
-def discriminator(image, num_downscale, reuse, training=False):
+def discriminator(image, num_downscale, reuse, training=False, var_device='/cpu:0'):
     ks = 5
     p1 = LayerParameter(
         with_bias=False,
         with_batch_normalize=True,
         rectifier=pseud_tanh(),
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
     p2 = LayerParameter(
         with_bias=False,
         with_batch_normalize=True,
         rectifier=tf.nn.sigmoid,
         training=training,
-        var_device='/cpu:0')
+        var_device=var_device)
 
     x = image - 0.5
 

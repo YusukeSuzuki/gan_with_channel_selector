@@ -17,6 +17,7 @@ DEFAULT_INPUT_QUEUE_MIN=2000
 DEFAULT_INPUT_QUEUE_MAX=10000
 
 NUM_DEVICES=2
+VAR_DEVICE='/gpu:0'
 
 DEFAULT_INPUT_WIDTH=64
 DEFAULT_INPUT_HEIGHT=64
@@ -27,8 +28,8 @@ IMAGE_LIST_FILE = './celeba_samples.txt'
 NUM_UPSAMPLE=4
 NUM_DOWNSAMPLE=4
 D_THRESH = 0.5
-LEARNING_RATE_G = 1e-4
-LEARNING_RATE_D = 1e-4
+LEARNING_RATE_G = 1e-3
+LEARNING_RATE_D = 1e-3
 USE_ADAM=False
 
 def create_argument_parser():
@@ -132,12 +133,15 @@ def proc(args):
             with tf.device('/gpu:{}'.format(d)), tf.name_scope('model'):
                 feature = model.random_feature_generator(feature_size)
                 generated_image = model.generator(
-                    feature, FIRST_SHAPE, NUM_UPSAMPLE, reuse=reuse, training=True)
+                    feature, FIRST_SHAPE, NUM_UPSAMPLE, reuse=reuse,
+                    training=True, var_device=VAR_DEVICE)
 
                 out_from_gen = discriminator(
-                    generated_image, NUM_DOWNSAMPLE, reuse=reuse, training=True)
+                    generated_image, NUM_DOWNSAMPLE, reuse=reuse,
+                    training=True, var_device=VAR_DEVICE)
                 out_from_img = discriminator(
-                    images[d], NUM_DOWNSAMPLE, reuse=True, training=True)
+                    images[d], NUM_DOWNSAMPLE, reuse=True,
+                    training=True, var_device=VAR_DEVICE)
                 reuse = True
 
                 tower_passed['f'].append(calc_passed(out_from_gen))
@@ -176,43 +180,44 @@ def proc(args):
                     max_outputs=12, collections=['summary_image'])
                     
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.device(VAR_DEVICE):
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
-        with tf.control_dependencies(update_ops):
-            g_losses = tf.reduce_mean( tf.concat(tower_losses['g'], axis=0) )
-            tf.summary.scalar('g_losses', g_losses)
-            d_losses = tf.reduce_mean( tf.concat(tower_losses['d'], axis=0) )
-            tf.summary.scalar('d_losses', d_losses)
+            with tf.control_dependencies(update_ops):
+                g_losses = tf.reduce_mean( tf.concat(tower_losses['g'], axis=0) )
+                tf.summary.scalar('g_losses', g_losses)
+                d_losses = tf.reduce_mean( tf.concat(tower_losses['d'], axis=0) )
+                tf.summary.scalar('d_losses', d_losses)
 
-            f_passed = tf.reduce_mean( tf.concat(tower_passed['f'], axis=0) )
-            r_passed = tf.reduce_mean( tf.concat(tower_passed['r'], axis=0) )
-            tf.summary.scalar('f_passed', f_passed)
-            tf.summary.scalar('r_passed', r_passed)
+                f_passed = tf.reduce_mean( tf.concat(tower_passed['f'], axis=0) )
+                r_passed = tf.reduce_mean( tf.concat(tower_passed['r'], axis=0) )
+                tf.summary.scalar('f_passed', f_passed)
+                tf.summary.scalar('r_passed', r_passed)
 
-            tf.summary.scalar('d_train_count', d_train_count)
+                tf.summary.scalar('d_train_count', d_train_count)
 
-            g_gradients_averages = average_gradients(tower_grads['g'])
-            d_gradients_averages = average_gradients(tower_grads['d'])
+                g_gradients_averages = average_gradients(tower_grads['g'])
+                d_gradients_averages = average_gradients(tower_grads['d'])
 
-            def train_both():
-                with tf.control_dependencies([
-                    g_opt.apply_gradients(g_gradients_averages, global_step),
-                    d_opt.apply_gradients(d_gradients_averages),
-                    tf.assign_add(d_train_count, 1)
-                    ]):
+                def train_both():
+                    with tf.control_dependencies([
+                        g_opt.apply_gradients(g_gradients_averages, global_step),
+                        d_opt.apply_gradients(d_gradients_averages),
+                        tf.assign_add(d_train_count, 1)
+                        ]):
 
-                    return tf.no_op()
+                        return tf.no_op()
 
-            def train_g():
-                with tf.control_dependencies([
-                    g_opt.apply_gradients(g_gradients_averages, global_step),
-                    ]):
-                    return tf.no_op()
+                def train_g():
+                    with tf.control_dependencies([
+                        g_opt.apply_gradients(g_gradients_averages, global_step),
+                        ]):
+                        return tf.no_op()
 
-            train_op = tf.case([
-                (r_passed < D_THRESH, train_both),
-                (f_passed > D_THRESH, train_both),
-                ], default=train_g)
+                train_op = tf.case([
+                    (r_passed < D_THRESH, train_both),
+                    (f_passed > D_THRESH, train_both),
+                    ], default=train_g)
 
         log_op = tf.summary.merge_all()
         image_log_op = tf.summary.merge(tf.get_collection('summary_image'))
